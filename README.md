@@ -263,8 +263,6 @@ See [`./openclaw-fireworks/README.md`](./openclaw-fireworks/README.md) for setup
 
 
 <a id="combinemethod"></a>
-<details>
-<summary><b>Option A: Combination Method</b> — Recommended !</summary>
 
 ```bash
 cd slime
@@ -277,7 +275,6 @@ See [`./openclaw-combine/README.md`](./openclaw-combine/README.md) for algorithm
 
 
 
-</details>
 
 
 
