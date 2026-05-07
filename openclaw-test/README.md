@@ -1,14 +1,6 @@
 # OpenClaw-Test: End-to-End Evaluation for OpenClaw-RL Training Methods
 
-This directory contains an automated evaluation suite that tests the **real-world effectiveness** of models trained with the three OpenClaw-RL optimization methods:
-
-| Method | Directory | Signal Type |
-|---|---|---|
-| **Combined (RL + OPD)** | `openclaw-combine/` | Weighted combination of both signals |
-| **Binary RL (GRPO)** | `openclaw-rl/` | Scalar reward (+1/−1/0) via PRM majority voting |
-| **On-Policy Distillation (OPD)** | `openclaw-opd/` | Token-level directional signal from hindsight hints |
-
-We recommend using **Combined (RL + OPD)**.
+This directory contains an automated evaluation suite that tests the **real-world effectiveness** of models trained with OpenClaw-RL method.
 
 ## What Does This Test Do?
 
@@ -21,7 +13,7 @@ The evaluation simulates a realistic multi-turn agentic workflow using **GSM8K m
 - Grade existing solutions against ground truth
 - Produce detailed, friendly feedback
 
-The test consists of **three sequential phases**:
+The test consists of **three sequential phases** (you can also run them together, but you need to obtain homework1 and homework2 first if you want to try this joint optimization):
 
 ### Phase 1: Student Chat (`student_chat.py`)
 
@@ -126,45 +118,8 @@ Launch the RL server with the trained model you want to evaluate. Choose the met
 
 ```bash
 cd slime
+bash ../openclaw-combine/run_qwen3_4b_openclaw_topk_select.sh
 ```
-
-**Combined (RL + OPD):**
-```bash
-bash ../openclaw-combine/run_qwen3_4b_openclaw_combine.sh      # Qwen3
-bash ../openclaw-combine/run_qwen35_4b_openclaw_combine.sh     # Qwen3.5
-```
-
-**Combined with LoRA** (parameter-efficient, fewer GPUs):
-```bash
-bash ../openclaw-combine/run_qwen3_4b_openclaw_combine_lora.sh     # Qwen3
-bash ../openclaw-combine/run_qwen35_4b_openclaw_combine_lora.sh    # Qwen3.5
-```
-
-**Binary RL:**
-```bash
-bash ../openclaw-rl/run_qwen3_4b_openclaw_rl.sh      # Qwen3
-bash ../openclaw-rl/run_qwen35_4b_openclaw_rl.sh     # Qwen3.5
-```
-
-**Binary RL with LoRA** (parameter-efficient, fewer GPUs):
-```bash
-bash ../openclaw-rl/run_qwen3_4b_openclaw_rl_lora.sh     # Qwen3
-bash ../openclaw-rl/run_qwen35_4b_openclaw_rl_lora.sh    # Qwen3.5
-```
-
-**On-Policy Distillation (OPD):**
-```bash
-bash ../openclaw-opd/run_qwen3_4b_openclaw_opd.sh      # Qwen3
-bash ../openclaw-opd/run_qwen35_4b_openclaw_opd.sh     # Qwen3.5
-```
-
-**OPD with LoRA** (parameter-efficient, fewer GPUs):
-```bash
-bash ../openclaw-opd/run_qwen3_4b_openclaw_opd_topk_lora.sh     # Qwen3
-bash ../openclaw-opd/run_qwen35_4b_openclaw_opd_topk_lora.sh    # Qwen3.5
-```
-
-> **Eval mode:** To enable evaluation logging with W&B, set `OPENCLAW_EVAL_MODE=1` and provide your W&B key via `WANDB_KEY` before launching. This is already the default in the OPD and Combine scripts.
 
 The RL server will be available at `http://0.0.0.0:30000/v1` by default.
 
