@@ -15,10 +15,10 @@ set -ex
 export PYTHONUNBUFFERED=1
 export PYTHONFAULTHANDLER=1
 
-NUM_GPUS=${NUM_GPUS:-4}
-ACTOR_GPUS=${ACTOR_GPUS:-2}
-ROLLOUT_GPUS=${ROLLOUT_GPUS:-1}
-PRM_GPUS=${PRM_GPUS:-1}
+NUM_GPUS=${NUM_GPUS:-1}
+ACTOR_GPUS=${ACTOR_GPUS:-1}
+ROLLOUT_GPUS=${ROLLOUT_GPUS:-0}
+PRM_GPUS=${PRM_GPUS:-0}
 
 if (( ACTOR_GPUS + ROLLOUT_GPUS + PRM_GPUS > NUM_GPUS )); then
     echo "ACTOR_GPUS + ROLLOUT_GPUS + PRM_GPUS must be <= NUM_GPUS"
@@ -30,24 +30,26 @@ export RAY_health_check_failure_threshold=20
 export RAY_health_check_period_ms=5000
 export RAY_health_check_timeout_ms=30000
 export RAY_num_heartbeats_timeout=60
+export RAY_memory_monitor_refresh_ms=0
+export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
 SLIME_ROOT="$(cd -- "${SCRIPT_DIR}/../slime" &>/dev/null && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." &>/dev/null && pwd)"
 
-HF_CKPT=${HF_CKPT:-/absolute/path/to/Qwen3-4B-Thinking-2507}
+HF_CKPT=${HF_CKPT:-/mnt/d/OpenClaw-RL/models/Qwen2.5-0.5B-Instruct}
 REF_LOAD=${REF_LOAD:-${HF_CKPT}}
-SAVE_CKPT=${SAVE_CKPT:-/absolute/path/to/OpenClaw-RL/ckpt/qwen3-4b-openclaw-combine}
-PRM_MODEL_PATH=${PRM_MODEL_PATH:-/absolute/path/to/Qwen3-4B-Thinking-2507}
+SAVE_CKPT=${SAVE_CKPT:-/mnt/d/OpenClaw-RL/ckpt/qwen2.5-0.5b-openclaw-combine}
+PRM_MODEL_PATH=${PRM_MODEL_PATH:-/mnt/d/OpenClaw-RL/models/Qwen2.5-0.5B-Instruct}
 
 export SGLANG_API_KEY="${SGLANG_API_KEY}"
-export SERVED_MODEL_NAME="qwen3-4b"
+export SERVED_MODEL_NAME="qwen2.5-0.5b"
 export HOST="0.0.0.0"
 export PORT="30000"
 export OPENCLAW_RECORD_ENABLED="${OPENCLAW_RECORD_ENABLED:-1}"  # 0=off, 1=on
 export OPENCLAW_RECORD_FILE="${SCRIPT_DIR}/results/qwen3_4b_lora_record.jsonl"
-export TP="${TP:-2}"
-export CONTEXT_LENGTH="32768"
+export TP="${TP:-1}"
+export CONTEXT_LENGTH="4096"
 export MEM_FRACTION_STATIC="0.85"
 export REASONING_PARSER="qwen3"
 export TOOL_CALL_PARSER="${TOOL_CALL_PARSER:-qwen25}"
@@ -70,10 +72,10 @@ ROLLOUT_ARGS=(
    --rollout-function-path openclaw_combine_rollout.generate_rollout_openclaw_combine
 
    --num-rollout 100000000
-   --rollout-batch-size 16
+   --rollout-batch-size 4
    --n-samples-per-prompt 1
-   --rollout-max-response-len 8192
-   --rollout-max-context-len 32768
+   --rollout-max-response-len 2048
+   --rollout-max-context-len 4096
    --rollout-temperature 0.6
    --reward-key score
 
@@ -82,8 +84,9 @@ ROLLOUT_ARGS=(
 
 PERF_ARGS=(
    --use-dynamic-batch-size
-   --max-tokens-per-gpu "${MAX_TOKENS_PER_GPU:-8192}"
+   --max-tokens-per-gpu "${MAX_TOKENS_PER_GPU:-2048}"
    --gradient-checkpointing
+   --fp16
 )
 
 COMBINE_ARGS=(
@@ -106,12 +109,13 @@ OPTIMIZER_ARGS=(
    --weight-decay 0.1
    --adam-beta1 0.9
    --adam-beta2 0.98
+   --fsdp-cpu-offload
 )
 
 LORA_ARGS=(
    --use-lora
-   --lora-rank 64
-   --lora-alpha 64
+   --lora-rank 16
+   --lora-alpha 32
    --lora-target-modules "q_proj,k_proj,v_proj,o_proj,gate_proj,up_proj,down_proj"
 )
 
@@ -121,19 +125,11 @@ SGLANG_ARGS=(
    --rollout-num-gpus-per-engine "${TP}"
    --sglang-tool-call-parser "${TOOL_CALL_PARSER}"
    --sglang-mem-fraction-static 0.85
-   --sglang-context-length 32768
+   --sglang-context-length 4096
    --sglang-reasoning-parser qwen3
 )
 
-PRM_ARGS=(
-   --prm-enable
-   --prm-num-gpus "${PRM_GPUS}"
-   --prm-num-gpus-per-engine "${PRM_TP:-${TP}}"
-   --prm-model-path "${PRM_MODEL_PATH}"
-   --prm-m "${PRM_M}"
-   --prm-temperature "${PRM_TEMPERATURE:-0.6}"
-   --prm-max-new-tokens "${PRM_MAX_NEW_TOKENS:-4096}"
-)
+PRM_ARGS=()
 
 CUSTOM_ARGS=(
    --custom-generate-function-path openclaw_combine_api_server.generate
@@ -147,7 +143,7 @@ if [ "${USE_WANDB}" = "1" ] && [ -n "${WANDB_KEY_VALUE}" ]; then
   WANDB_ARGS=(
     --use-wandb
     --wandb-project ${WANDB_PROJECT}
-    --wandb-group qwen3-4b-openclaw-combine-lora
+    --wandb-group qwen2.5-0.5b-openclaw-combine-lora
     --wandb-key ${WANDB_KEY_VALUE}
   )
 else
@@ -173,7 +169,7 @@ RUNTIME_ENV_JSON="{
 
 ray job submit --address="http://127.0.0.1:8265" \
    --runtime-env-json="${RUNTIME_ENV_JSON}" \
-   -- $(which python) train_async.py \
+   -- python3 train_async.py \
    --train-backend fsdp \
    --actor-num-nodes 1 \
    --actor-num-gpus-per-node "${ACTOR_GPUS}" \

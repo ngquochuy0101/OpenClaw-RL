@@ -52,6 +52,34 @@ class FSDPTrainRayActor(TrainRayActor):
         self._setup_device_mesh()
         torch.manual_seed(args.seed)
 
+        # --- MONKEY PATCH TO AVOID PIN MEMORY CRASH ON LOW RAM HOSTS ---
+        if not hasattr(torch.Tensor, "_original_pin_memory_patched"):
+            _original_pin_memory = torch.Tensor.pin_memory
+            def _safe_pin_memory(self, *a, **kw):
+                try:
+                    return _original_pin_memory(self, *a, **kw)
+                except Exception as e:
+                    logger.warning("pin_memory() failed (likely low RAM), using unpinned tensor.")
+                    return self
+            torch.Tensor.pin_memory = _safe_pin_memory
+            torch.Tensor._original_pin_memory_patched = True
+
+        # --- MONKEY PATCH TO AVOID NCCL CRASH ON LOW RAM HOSTS (world_size=1) ---
+        if dist.get_world_size() == 1 and not hasattr(torch.distributed, "_original_scatter_patched"):
+            _original_scatter = torch.distributed.scatter
+            def _dummy_scatter(tensor, scatter_list=None, src=0, group=None, async_op=False):
+                if scatter_list is not None and len(scatter_list) > 0 and tensor is not None:
+                    tensor.copy_(scatter_list[0])
+                class DummyWork:
+                    def wait(self): pass
+                return DummyWork()
+            torch.distributed.scatter = _dummy_scatter
+            import torch.distributed.distributed_c10d as c10d
+            c10d.scatter = _dummy_scatter
+            torch.distributed._original_scatter_patched = True
+        # ---------------------------------------------------------------
+
+
         self.train_parallel_config = {
             "dp_size": self.dp_size,
         }
@@ -280,13 +308,15 @@ class FSDPTrainRayActor(TrainRayActor):
             model = model.to_empty(device=torch.cuda.current_device())
 
         is_cpu_offload = cpu_offload is not None
-        options = StateDictOptions(full_state_dict=True, cpu_offload=is_cpu_offload, broadcast_from_rank0=True)
+        needs_broadcast = dist.get_world_size() > 1
+        options = StateDictOptions(full_state_dict=True, cpu_offload=is_cpu_offload, broadcast_from_rank0=needs_broadcast)
 
         set_model_state_dict(model, full_state, options=options)
 
         # set_model_state_dict will not broadcast buffers, so we need to broadcast them manually.
-        for _name, buf in model.named_buffers():
-            dist.broadcast(buf, src=0)
+        if needs_broadcast:
+            for _name, buf in model.named_buffers():
+                dist.broadcast(buf, src=0)
 
         if is_cpu_offload:
             model.to("cpu", non_blocking=True)
